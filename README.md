@@ -6,14 +6,14 @@ This is a very simple demo project to test user authentication on a webapp. **âš
    - Session cookie management
    - Passwords are hashed and salted
 
-## Anti-features
-   - Awful database (Won't fix)
+## Anti-features (Won't fix)
+   - Awful database
+   - Session tokens are too short
 
 ## To Do
    - Vunerable to XSRF
    - Does not sanitize user input
-   - Can not create new users
-   - Can not delete new users
+   - Can not delete users
 
 ## How to setup
    - Generate a self-signed TLS certificate and place it in `./cert/`

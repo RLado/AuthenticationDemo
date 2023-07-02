@@ -13,17 +13,59 @@ import (
 	"lado.one/auth/mockDB"
 )
 
+// Register function. Serve register page, and check if already logged in
+func register(w http.ResponseWriter, r *http.Request) {
+	// Get session cookie
+	cookie, err := r.Cookie("session")
+
+	if err == http.ErrNoCookie {
+		http.ServeFile(w, r, "app/register.html")
+		return
+	}
+
+	// Check session cookie
+	_, err = mockDB.Get("mockDB/sessions.txt", cookie.Value)
+	if err == nil {
+		http.Redirect(w, r, "/app", http.StatusFound)
+		return
+	}
+
+	// Serve login page (could not validate session cookie)
+	http.ServeFile(w, r, "app/register.html")
+}
+
+// Register on the DB function. Get credentials from a POST request and register them on the DB. Then redirect to login page
+func reg(w http.ResponseWriter, r *http.Request) {
+	// Get credentials from POST request
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	// Check credentials
+	_, err := mockDB.Get("mockDB/users.txt", username)
+	if err == nil {
+		http.Error(w, "Username already in use", http.StatusForbidden)
+		return
+	}
+
+	// Hash password and add to users DB
+	salt, _ := rand.Int(rand.Reader, big.NewInt(1_000_000_000_000))
+	password_hash_bytes := sha512.Sum512([]byte(password + salt.String())[:])
+	password_hash := hex.EncodeToString(password_hash_bytes[:])
+	mockDB.Append("mockDB/salt.txt", username, salt.String())
+	mockDB.Append("mockDB/users.txt", username, password_hash)
+
+	// Redirect to login page
+	http.Redirect(w, r, "/login", http.StatusFound)
+	log.Printf("User %s registered", username)
+}
+
 // Login function. Serve login page, and check if already logged in
 func login(w http.ResponseWriter, r *http.Request) {
 	// Get session cookie
 	cookie, err := r.Cookie("session")
 
-	if err != nil {
-		if err == http.ErrNoCookie {
-			http.ServeFile(w, r, "app/login.html")
-			return
-		}
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	if err == http.ErrNoCookie {
+		http.ServeFile(w, r, "app/login.html")
 		return
 	}
 
@@ -89,7 +131,7 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &cookie)
 
-	// Redirect to homepage
+	// Redirect to app
 	http.Redirect(w, r, "/app", http.StatusFound)
 	log.Printf("User %s logged in", username)
 }
@@ -99,12 +141,8 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	// Get session cookie
 	cookie, err := r.Cookie("session")
 
-	if err != nil {
-		if err == http.ErrNoCookie {
-			http.Redirect(w, r, "/notLoggedIn.html", http.StatusFound)
-			return
-		}
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	if err == http.ErrNoCookie {
+		http.Redirect(w, r, "/notLoggedIn.html", http.StatusFound)
 		return
 	}
 
@@ -112,11 +150,13 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	cookie.Expires = time.Now().AddDate(0, 0, -1)
 	http.SetCookie(w, cookie)
 
+	user, _ := mockDB.Get("mockDB/sessions.txt", cookie.Value)
 	mockDB.Delete("mockDB/sessions.txt", cookie.Value)
 	mockDB.Delete("mockDB/sessions_expire.txt", cookie.Value)
 
 	// Redirect to homepage (confirm logout)
 	http.ServeFile(w, r, "app/logout.html")
+	log.Printf("User %s logged out", user)
 }
 
 // Serve app function. Check if session cookie is valid and serve the app. If not, redirect to login page
@@ -159,15 +199,16 @@ func clearExpiredSessions() {
 			if time.Now().Unix() > exp_int {
 				mockDB.Delete("mockDB/sessions.txt", session)
 				mockDB.Delete("mockDB/sessions_expire.txt", session)
+				log.Printf("Cleared expired sessions")
 			}
 		}
-
-		log.Printf("Cleared expired sessions")
 	}
 }
 
 func main() {
 	http.Handle("/", http.FileServer(http.Dir("static"))) // This could be Nginx and act as a reverse proxy for the app or other services
+	http.HandleFunc("/register", register)
+	http.HandleFunc("/reg", reg)
 	http.HandleFunc("/login", login)
 	http.HandleFunc("/auth", authenticate)
 	http.HandleFunc("/app", serveApp)
