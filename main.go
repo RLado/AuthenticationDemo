@@ -184,6 +184,32 @@ func serveApp(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
+// Delete user account
+func deleteUser(w http.ResponseWriter, r *http.Request) {
+	// Get session cookie
+	cookie, err := r.Cookie("session")
+
+	if err == http.ErrNoCookie {
+		http.Redirect(w, r, "/notLoggedIn.html", http.StatusFound)
+		return
+	}
+
+	// Delete user
+	user, _ := mockDB.Get("mockDB/sessions.txt", cookie.Value)
+	mockDB.Delete("mockDB/sessions.txt", cookie.Value)
+	mockDB.Delete("mockDB/sessions_expire.txt", cookie.Value)
+	mockDB.Delete("mockDB/users.txt", user)
+	mockDB.Delete("mockDB/salt.txt", user)
+
+	// Delete session cookie
+	cookie.Expires = time.Now().AddDate(0, 0, -1)
+	http.SetCookie(w, cookie)
+
+	// Redirect to homepage (confirm deletion)
+	w.Write([]byte(fmt.Sprintf("User %s deleted", user)))
+	log.Printf("User %s deleted", user)
+}
+
 // Maintain session cookies. Check if session cookie is expired and delete it
 func clearExpiredSessions() {
 	for range time.Tick(time.Minute * 1) {
@@ -213,6 +239,7 @@ func main() {
 	http.HandleFunc("/auth", authenticate)
 	http.HandleFunc("/app", serveApp)
 	http.HandleFunc("/logout", logout)
+	http.HandleFunc("/deleteUser", deleteUser)
 
 	go clearExpiredSessions() // Start session cookie maintenance goroutine
 

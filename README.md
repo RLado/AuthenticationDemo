@@ -5,6 +5,7 @@ This is a very simple demo project to test user authentication on a webapp. **âš
 ## Features:
    - Session cookie management
    - Passwords are hashed and salted
+   - Can create users, log in and out and delete them
 
 ## Anti-features (Won't fix)
    - Awful database
@@ -13,7 +14,6 @@ This is a very simple demo project to test user authentication on a webapp. **âš
 ## To Do
    - Vunerable to XSRF
    - Does not sanitize user input
-   - Can not delete users
 
 ## How to setup
    - Generate a self-signed TLS certificate and place it in `./cert/`
