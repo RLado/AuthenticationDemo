@@ -1,6 +1,26 @@
 # Authentication server demo
 
-This is a very simple demo project to test user authentication on a webapp
+This is a very simple demo project to test user authentication on a webapp. **⚠️ DO NOT USE IN PRODUCTION**
+
+## Features:
+   - Session cookie management
+   - Passwords are hashed and salted
+
+## Anti-features
+   - Awful database (Won't fix)
+
+## To Do
+   - Vunerable to XSRF
+   - Does not sanitize user input
+   - Can not create new users
+   - Can not delete new users
+
+## How to setup
+   - Generate a self-signed TLS certificate and place it in `./cert/`
+   - Run main.go: 
+   ``` bash
+   go run main.go
+   ```
 
 ## How to create a self-signed TLS certificate for testing
 

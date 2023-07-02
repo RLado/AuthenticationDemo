@@ -1,9 +1,16 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/sha512"
+	"encoding/hex"
 	"fmt"
+	"log"
+	"math/big"
 	"net/http"
 	"time"
+
+	"lado.one/auth/mockDB"
 )
 
 // Login function. Serve login page, and check if already logged in
@@ -21,7 +28,8 @@ func login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check session cookie
-	if cookie.Value == "123456789" {
+	_, err = mockDB.Get("mockDB/sessions.txt", cookie.Value)
+	if err == nil {
 		http.Redirect(w, r, "/app", http.StatusFound)
 		return
 	}
@@ -37,16 +45,42 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 
 	// Check credentials
-	if username != "admin" || password != "admin" {
+	salt, _ := mockDB.Get("mockDB/salt.txt", username)
+	passwd, _ := mockDB.Get("mockDB/users.txt", username)
+
+	// Check password
+	password_hash_bytes := sha512.Sum512([]byte(password + salt)[:])
+	password_hash := hex.EncodeToString(password_hash_bytes[:])
+	if password_hash != passwd {
+		log.Printf("Invalid login attempt for user %s", username)
 		http.Error(w, "Invalid credentials", http.StatusForbidden)
 		return
 	}
 
+	// Check if user already has a session cookie assigned
+	_, err := mockDB.Get("mockDB/sessions.txt", username)
+	if err == nil {
+		mockDB.Delete("mockDB/sessions.txt", username)
+		mockDB.Delete("mockDB/sessions_expire.txt", username)
+	}
+
 	// Create session cookie
+	session, _ := rand.Int(rand.Reader, big.NewInt(1_000_000_000_000))
+	if mockDB.Append("mockDB/sessions.txt", session.String(), username) != nil {
+		log.Printf("Error creating session cookie for user %s", username)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if mockDB.Append("mockDB/sessions_expire.txt", session.String(), fmt.Sprint(time.Now().Add(5*time.Minute).Unix())) != nil {
+		log.Printf("Error creating session cookie for user %s", username)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	expiration := time.Now().Add(5 * time.Minute)
 	cookie := http.Cookie{ // https://pkg.go.dev/net/http#Cookie
 		Name:     "session",
-		Value:    "123456789",
+		Value:    session.String(),
 		Expires:  expiration,
 		MaxAge:   300,
 		Secure:   true,
@@ -57,6 +91,7 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to homepage
 	http.Redirect(w, r, "/app", http.StatusFound)
+	log.Printf("User %s logged in", username)
 }
 
 // Logout function. Delete session cookie
@@ -77,6 +112,9 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	cookie.Expires = time.Now().AddDate(0, 0, -1)
 	http.SetCookie(w, cookie)
 
+	mockDB.Delete("mockDB/sessions.txt", cookie.Value)
+	mockDB.Delete("mockDB/sessions_expire.txt", cookie.Value)
+
 	// Redirect to homepage (confirm logout)
 	http.ServeFile(w, r, "app/logout.html")
 }
@@ -96,7 +134,8 @@ func serveApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check session cookie
-	if cookie.Value == "123456789" {
+	_, err = mockDB.Get("mockDB/sessions.txt", cookie.Value)
+	if err == nil {
 		http.ServeFile(w, r, "app/main.html")
 		return
 	}
@@ -105,12 +144,36 @@ func serveApp(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
+// Maintain session cookies. Check if session cookie is expired and delete it
+func clearExpiredSessions() {
+	for range time.Tick(time.Minute * 1) {
+		sessions_map, err := mockDB.GetAll("mockDB/sessions_expire.txt")
+		if err != nil {
+			log.Printf("Error clearing expired sessions: %s", err)
+			continue
+		}
+
+		for session, expire := range sessions_map {
+			var exp_int int64
+			fmt.Sscan(expire, &exp_int)
+			if time.Now().Unix() > exp_int {
+				mockDB.Delete("mockDB/sessions.txt", session)
+				mockDB.Delete("mockDB/sessions_expire.txt", session)
+			}
+		}
+
+		log.Printf("Cleared expired sessions")
+	}
+}
+
 func main() {
 	http.Handle("/", http.FileServer(http.Dir("static"))) // This could be Nginx and act as a reverse proxy for the app or other services
 	http.HandleFunc("/login", login)
 	http.HandleFunc("/auth", authenticate)
 	http.HandleFunc("/app", serveApp)
 	http.HandleFunc("/logout", logout)
+
+	go clearExpiredSessions() // Start session cookie maintenance goroutine
 
 	fmt.Println("Listening on port 8080: https://localhost:8080")
 	http.ListenAndServeTLS(":8080", "cert/cert.pem", "cert/key.pem", nil)
