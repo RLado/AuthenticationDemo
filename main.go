@@ -160,6 +160,7 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	user, _ := mockDB.Get("mockDB/sessions.txt", cookie.Value)
 	mockDB.Delete("mockDB/sessions.txt", cookie.Value)
 	mockDB.Delete("mockDB/sessions_expire.txt", cookie.Value)
+	mockDB.Delete("mockDB/csrf_token.txt", cookie.Value)
 
 	// Redirect to homepage (confirm logout)
 	http.ServeFile(w, r, "app/logout.html")
@@ -228,6 +229,7 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	// Delete user
 	mockDB.Delete("mockDB/sessions.txt", cookie.Value)
 	mockDB.Delete("mockDB/sessions_expire.txt", cookie.Value)
+	mockDB.Delete("mockDB/csrf_token.txt", cookie.Value)
 	mockDB.Delete("mockDB/users.txt", user)
 	mockDB.Delete("mockDB/salt.txt", user)
 
