@@ -131,6 +131,10 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &cookie)
 
+	// Create CSRF token
+	csrfToken, _ := rand.Int(rand.Reader, big.NewInt(1_000_000_000_000))
+	mockDB.Append("mockDB/csrf_token.txt", session.String(), csrfToken.String())
+
 	// Redirect to app
 	http.Redirect(w, r, "/app", http.StatusFound)
 	log.Printf("User %s logged in", username)
@@ -138,6 +142,9 @@ func authenticate(w http.ResponseWriter, r *http.Request) {
 
 // Logout function. Delete session cookie
 func logout(w http.ResponseWriter, r *http.Request) {
+	// Ensure this request is not cached by the browser
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
 	// Get session cookie
 	cookie, err := r.Cookie("session")
 
@@ -161,6 +168,9 @@ func logout(w http.ResponseWriter, r *http.Request) {
 
 // Serve app function. Check if session cookie is valid and serve the app. If not, redirect to login page
 func serveApp(w http.ResponseWriter, r *http.Request) {
+	// Ensure this request is not cached by the browser
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
 	// Get session cookie
 	cookie, err := r.Cookie("session")
 
@@ -186,6 +196,9 @@ func serveApp(w http.ResponseWriter, r *http.Request) {
 
 // Delete user account
 func deleteUser(w http.ResponseWriter, r *http.Request) {
+	// Ensure this request is not cached by the browser
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
 	// Get session cookie
 	cookie, err := r.Cookie("session")
 
@@ -194,8 +207,25 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete user
+	// Identify user
 	user, _ := mockDB.Get("mockDB/sessions.txt", cookie.Value)
+
+	// Get CSRF token
+	csrfToken := r.FormValue("csrfToken")
+	trueCsrf, err := mockDB.Get("mockDB/csrf_token.txt", cookie.Value)
+	if err != nil {
+		log.Printf("Error getting CSRF token for user %s", user)
+		http.Redirect(w, r, "/app", http.StatusFound)
+		return
+	}
+
+	if csrfToken != trueCsrf {
+		log.Printf("User %s tried to delete account with invalid CSRF token", user)
+		http.Redirect(w, r, "/app", http.StatusFound)
+		return
+	}
+
+	// Delete user
 	mockDB.Delete("mockDB/sessions.txt", cookie.Value)
 	mockDB.Delete("mockDB/sessions_expire.txt", cookie.Value)
 	mockDB.Delete("mockDB/users.txt", user)
@@ -210,7 +240,26 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	log.Printf("User %s deleted", user)
 }
 
-// Maintain session cookies. Check if session cookie is expired and delete it
+// Get CSRF token when requested (if user is logged in)
+func getCsrfToken(w http.ResponseWriter, r *http.Request) {
+	// Ensure this request is not cached by the browser
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+	// Get session cookie
+	cookie, err := r.Cookie("session")
+
+	if err == http.ErrNoCookie {
+		http.Redirect(w, r, "/notLoggedIn.html", http.StatusFound)
+		return
+	}
+
+	// Get CSRF token
+	csrfToken, _ := mockDB.Get("mockDB/csrf_token.txt", cookie.Value)
+
+	w.Write([]byte(csrfToken))
+}
+
+// Check if session cookie is expired and delete it
 func clearExpiredSessions() {
 	for range time.Tick(time.Minute * 1) {
 		sessions_map, err := mockDB.GetAll("mockDB/sessions_expire.txt")
@@ -225,6 +274,7 @@ func clearExpiredSessions() {
 			if time.Now().Unix() > exp_int {
 				mockDB.Delete("mockDB/sessions.txt", session)
 				mockDB.Delete("mockDB/sessions_expire.txt", session)
+				mockDB.Delete("mockDB/csrf_token.txt", session)
 				log.Printf("Cleared expired sessions")
 			}
 		}
@@ -240,6 +290,7 @@ func main() {
 	http.HandleFunc("/app", serveApp)
 	http.HandleFunc("/logout", logout)
 	http.HandleFunc("/deleteUser", deleteUser)
+	http.HandleFunc("/getCsrfToken", getCsrfToken)
 
 	go clearExpiredSessions() // Start session cookie maintenance goroutine
 

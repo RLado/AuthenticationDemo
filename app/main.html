@@ -4,11 +4,32 @@
 <head>
     <meta charset="UTF-8">
     <title>App</title>
+    <!-- I am not sure this script is an optimal solution, but it works -->
+    <script>
+        function getCSRFToken() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200){
+                    document.getElementById("csrfTokenDeleteForm").value = this.responseText;
+                }
+            };
+            xhttp.open("GET", "/getCsrfToken", true);
+            xhttp.send();
+        }
+        getCSRFToken();
+    </script>
+</head>
+<body>
+    <h1>Congratulations you are logged in!</h1>
+    <p>Click here to logout: <a href="/logout"> Logout </a></p>
+    <p>Click here to delete your account: 
+        <form action="/deleteUser" method="POST">
+            <button id="csrfTokenDeleteForm" name=csrfToken value="csrfToken" style="color:#ff0000">DELETE</button>
+        </form>
+    </p>
+    
 
-    <body>
-        <h1>Congratulations you are logged in!</h1>
-        <p>Click here to logout: <a href="/logout"> Logout </a></p>
-        <p>Click here to delete your account: <a style="color:#ff0000" href="/deleteUser">DELETE</a></p>
-
-    </body>
+</body>
 </html>
+
+

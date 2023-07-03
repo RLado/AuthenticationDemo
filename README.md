@@ -6,13 +6,13 @@ This is a very simple demo project to test user authentication on a webapp. **âš
    - Session cookie management
    - Passwords are hashed and salted
    - Can create users, log in and out and delete them
+   - Not vulnerable to CSRF *(on user delete)*
 
 ## Anti-features (Won't fix)
    - Awful database
    - Session tokens are too short
 
 ## To Do
-   - Vunerable to XSRF
    - Does not sanitize user input
 
 ## How to setup
